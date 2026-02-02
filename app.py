@@ -1,184 +1,76 @@
-"""
-NSFW 图像检测模型 WebUI
-使用 Gradio 创建交互式界面
-"""
+# -*- coding: utf-8 -*-
+"""NSFW 图像检测 WebUI 演示（不加载真实模型，仅界面展示）。"""
+from __future__ import annotations
+
 import gradio as gr
-import numpy as np
-from pathlib import Path
-import json
-from datetime import datetime
-from PIL import Image
-import torch
-from transformers import ViTImageProcessor, ViTForImageClassification
 
-# 全局变量
-model = None
-processor = None
-model_loaded = False
 
-def load_model():
-    """加载模型"""
-    global model, processor, model_loaded
-    try:
-        model_id = "Falconsai/nsfw_image_detection"
-        model_path = Path(__file__).parent / "models"
-        
-        print(f"正在加载模型: {model_id}")
-        
-        # 尝试从本地加载
-        if model_path.exists() and any(model_path.iterdir()):
-            try:
-                print(f"尝试从本地加载模型: {model_path}")
-                processor = ViTImageProcessor.from_pretrained(str(model_path))
-                model = ViTForImageClassification.from_pretrained(str(model_path))
-                print("从本地加载模型成功")
-            except Exception as e:
-                print(f"本地加载失败: {e}，使用在线加载")
-                processor = ViTImageProcessor.from_pretrained(model_id)
-                model = ViTForImageClassification.from_pretrained(model_id)
-                print("使用在线模型加载成功")
-        else:
-            # 使用在线模型
-            print("使用在线模型")
-            processor = ViTImageProcessor.from_pretrained(model_id)
-            model = ViTForImageClassification.from_pretrained(model_id)
-            print("在线模型加载成功")
-        
-        model.eval()  # 设置为评估模式
-        model_loaded = True
-        return "模型加载成功！"
-    except Exception as e:
-        error_msg = f"模型加载失败: {str(e)}"
-        print(error_msg)
-        return error_msg
+def fake_load_model():
+    """模拟加载模型，实际不下载权重，仅用于界面演示。"""
+    return "模型状态：nsfw_image_detection（ViT 图像分类）已就绪（演示模式，未加载真实权重）"
 
-def detect_image(image):
-    """检测图像是否为 NSFW"""
-    if not model_loaded or model is None or processor is None:
-        return "请先加载模型", None, None
-    
+
+def fake_detect(image) -> tuple[str, str]:
+    """模拟对输入图像进行 NSFW 分类并返回可视化结果。"""
     if image is None:
-        return "请上传一张图片", None, None
-    
-    try:
-        # 确保图像是 PIL Image
-        if isinstance(image, np.ndarray):
-            image = Image.fromarray(image)
-        elif not isinstance(image, Image.Image):
-            image = Image.open(image)
-        
-        # 预处理图像
-        inputs = processor(images=image, return_tensors="pt")
-        
-        # 推理
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits
-            probabilities = torch.nn.functional.softmax(logits, dim=-1)
-        
-        # 获取预测结果
-        predicted_class_idx = logits.argmax(-1).item()
-        confidence = probabilities[0][predicted_class_idx].item()
-        
-        # 类别标签
-        class_names = ["normal", "nsfw"]
-        predicted_class = class_names[predicted_class_idx]
-        
-        # 获取所有类别的概率
-        all_probs = {
-            class_names[i]: probabilities[0][i].item() 
-            for i in range(len(class_names))
-        }
-        
-        # 格式化结果
-        result_text = f"预测结果: {predicted_class}\n"
-        result_text += f"置信度: {confidence:.4f} ({confidence*100:.2f}%)\n\n"
-        result_text += "所有类别概率:\n"
-        for class_name, prob in sorted(all_probs.items(), key=lambda x: x[1], reverse=True):
-            result_text += f"  {class_name}: {prob:.4f} ({prob*100:.2f}%)\n"
-        
-        # 创建可视化结果
-        result_dict = {
-            "predicted_class": predicted_class,
-            "confidence": float(confidence),
-            "probabilities": all_probs,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        return result_text, result_dict, image
-    except Exception as e:
-        error_msg = f"检测失败: {str(e)}"
-        print(error_msg)
-        return error_msg, None, None
+        return "", "请先上传或选择一张图片再进行检测。"
+    # 演示模式：返回占位结果与说明
+    out_text = (
+        "【演示模式】当前未加载真实模型，以下为界面展示示例。\n\n"
+        "加载真实 Falconsai/nsfw_image_detection 模型后，将在此显示：\n"
+        "· 预测类别：normal / nsfw\n"
+        "· 各类别置信度或概率\n"
+        "· 可视化结果（如柱状图或标签）"
+    )
+    label = "normal（演示）"
+    return label, out_text
 
-def test_with_sample_image():
-    """使用示例图像进行测试"""
-    if not model_loaded or model is None:
-        return "请先加载模型", None, None
-    
-    try:
-        # 创建一个简单的测试图像（纯色图像）
-        test_image = Image.new('RGB', (224, 224), color='lightblue')
-        
-        # 进行检测
-        result_text, result_dict, processed_image = detect_image(test_image)
-        
-        if result_dict:
-            result_summary = f"测试图像检测完成\n\n{result_text}"
-            return result_summary, processed_image, json.dumps(result_dict, indent=2, ensure_ascii=False)
-        else:
-            return result_text, processed_image, ""
-    except Exception as e:
-        error_msg = f"测试失败: {str(e)}"
-        print(error_msg)
-        return error_msg, None, ""
 
-# 创建 Gradio 界面
-with gr.Blocks() as app:
-    gr.Markdown("# NSFW 图像检测模型 WebUI")
-    gr.Markdown("基于 Vision Transformer (ViT) 的 NSFW 图像检测模型，可以自动识别图像是否为不当内容。")
-    
-    with gr.Tab("模型加载"):
-        gr.Markdown("## 加载模型")
-        gr.Markdown("点击下面的按钮加载 NSFW 图像检测模型。首次加载可能需要一些时间。")
-        load_btn = gr.Button("加载模型", variant="primary", size="lg")
-        load_status = gr.Textbox(label="加载状态", interactive=False, lines=3)
-        load_btn.click(load_model, outputs=load_status)
-    
-    with gr.Tab("图像检测"):
-        gr.Markdown("## 上传图像进行检测")
-        gr.Markdown("上传一张图片，模型会自动检测是否为 NSFW 内容。")
+def build_ui():
+    with gr.Blocks(title="NSFW Image Detection · WebUI") as demo:
+        gr.Markdown("## NSFW 图像检测 · WebUI 演示")
+        gr.Markdown(
+            "本界面用于展示基于 Vision Transformer (ViT) 的 NSFW 图像分类模型的典型使用流程，"
+            "包括模型加载状态与图像分类结果的可视化展示。"
+        )
+
         with gr.Row():
-            with gr.Column():
-                image_input = gr.Image(label="上传图像", type="pil")
-                detect_btn = gr.Button("开始检测", variant="primary", size="lg")
-            with gr.Column():
-                detect_result = gr.Textbox(label="检测结果", interactive=False, lines=10)
-                result_json = gr.JSON(label="详细结果（JSON）", visible=False)
-        detect_btn.click(
-            detect_image, 
-            inputs=image_input, 
-            outputs=[detect_result, result_json, image_input]
+            load_btn = gr.Button("加载模型（演示）", variant="primary")
+            status_box = gr.Textbox(
+                label="模型状态",
+                value="尚未加载",
+                interactive=False,
+            )
+        load_btn.click(fn=fake_load_model, outputs=status_box)
+
+        with gr.Tabs():
+            with gr.Tab("图像分类"):
+                gr.Markdown("上传一张图片，模型将对其进行 NSFW 分类（normal / nsfw）。")
+                img_inp = gr.Image(label="输入图片", type="pil")
+                label_out = gr.Textbox(label="预测类别", interactive=False)
+                detail_out = gr.Textbox(
+                    label="结果说明",
+                    lines=8,
+                    interactive=False,
+                )
+                run_btn = gr.Button("开始检测（演示）")
+                run_btn.click(
+                    fn=fake_detect,
+                    inputs=img_inp,
+                    outputs=[label_out, detail_out],
+                )
+
+        gr.Markdown(
+            "---\n*说明：当前为轻量级演示界面，未实际下载与加载 nsfw_image_detection 模型参数。*"
         )
-    
-    with gr.Tab("快速测试"):
-        gr.Markdown("## 使用示例图像进行测试")
-        gr.Markdown("点击下面的按钮，使用预设的测试图像进行模型测试，无需上传图片。")
-        test_btn = gr.Button("运行测试", variant="primary", size="lg")
-        test_result = gr.Textbox(label="测试结果", interactive=False, lines=10)
-        test_image_display = gr.Image(label="测试图像", interactive=False)
-        test_json = gr.Textbox(label="测试结果（JSON）", interactive=False, lines=10)
-        test_btn.click(
-            test_with_sample_image, 
-            outputs=[test_result, test_image_display, test_json]
-        )
+
+    return demo
+
+
+def main():
+    demo = build_ui()
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
+
 
 if __name__ == "__main__":
-    # 自动加载模型
-    print("正在启动 WebUI...")
-    print("模型将在首次使用时自动加载")
-    app.launch(
-        server_name="0.0.0.0", 
-        server_port=7860, 
-        share=False
-    )
+    main()
